@@ -1,132 +1,84 @@
-import streamlit as nn
+import streamlit as str
+import streamlit.components.v1 as components
+from utils.db import supabase  # Garante que aponta para o teu utilitário de BD
 
-# Configuração da página administrativa
-nn.set_page_config(
-    page_title="Portaria — Gonaldo's Bday",
-    page_icon="🛡️",
-    layout="centered"
-)
+str.set_page_config(page_title="Portaria Digital 3.0", page_icon="🎟️", layout="centered")
 
-import time
-from utils.db import realizar_checkin
-
-# Estilização Clara e Minimalista (Estilo Gemini)
-nn.markdown("""
+str.markdown("""
     <style>
-    .stApp {
-        background-color: #f8f9fa;
-    }
-    .titulo-admin {
-        color: #1f1f1f !important;
-        text-align: center;
-        font-family: 'Segoe UI', Roboto, sans-serif;
-        font-weight: 600;
-        margin-bottom: 2px;
-    }
-    .subtitulo-admin {
-        text-align: center;
-        color: #5f6368 !important;
-        font-size: 14px;
-        margin-bottom: 24px;
-        letter-spacing: 0.5px;
-    }
-    /* Cards de Feedback de Validação */
-    .card-sucesso {
-        background-color: #e6f4ea;
-        color: #137333 !important;
-        padding: 24px;
-        border-radius: 16px;
-        border: 1px solid #c4eed0;
-        text-align: center;
-        font-size: 18px;
-        font-weight: 500;
-        margin-top: 15px;
-    }
-    .card-erro {
-        background-color: #fce8e6;
-        color: #c5221f !important;
-        padding: 24px;
-        border-radius: 16px;
-        border: 1px solid #fad2cf;
-        text-align: center;
-        font-size: 18px;
-        font-weight: 500;
-        margin-top: 15px;
-    }
+    .title { text-align: center; color: #45f3ff; font-family: 'Helvetica Neue', sans-serif; }
+    .subtitle { text-align: center; color: #66fcf1; margin-bottom: 30px; }
     </style>
+    <h1 class="title">🛡️ Portaria Digital Elegante</h1>
+    <p class="subtitle">Scanner de QR Code em Tempo Real</p>
 """, unsafe_allow_html=True)
 
-nn.markdown('<h1 class="titulo-admin">🛡️ Sistema de Portaria Digital</h1>', unsafe_allow_html=True)
-nn.markdown('<p class="subtitulo-admin">Gonaldo Manuel Bday — Validação em Tempo Real</p>', unsafe_allow_html=True)
+# 1. Injeção de Scanner Moderno em JavaScript (Instascan)
+# Este bloco abre a câmara em modo vídeo e procura QR Codes frames por segundo
+qrcode_scanner_html = """
+<div style="text-align: center;">
+    <video id="preview" style="width: 100%; max-width: 400px; border: 2px solid #45f3ff; border-radius: 10px; background: #000;"></video>
+</div>
+<script src="https://rawgit.com/schmich/instascan-builds/master/instascan.min.js"></script>
+<script>
+  let scanner = new Instascan.Scanner({ video: document.getElementById('preview'), mirror: false });
+  scanner.addListener('scan', function (content) {
+    // Envia o código lido de volta para o Streamlit instantaneamente
+    window.parent.postMessage({type: 'streamlit:setComponentValue', value: content}, '*');
+  });
+  Instascan.Camera.getCameras().then(function (cameras) {
+    if (cameras.length > 0) {
+      // Usa a câmara traseira do telemóvel se disponível, senão usa a primeira
+      let selectedCamera = cameras.find(c => c.name.toLowerCase().includes('back')) || cameras[0];
+      scanner.start(selectedCamera);
+    } else {
+      console.error('Nenhuma câmara encontrada.');
+    }
+  }).catch(function (e) {
+    console.error(e);
+  });
+</script>
+"""
 
-# --- LEITOR DE QR CODE VIA CÂMARA ---
-# O Streamlit possui o componente nativo camera_input que funciona perfeitamente no telemóvel
-nn.markdown("### 📷 Aponta a câmara para o QR Code do Convidado")
-imagem_camera = nn.camera_input("Ler código do convite", label_visibility="collapsed")
+# Renderiza o scanner na página
+codigo_detetado = components.html(qrcode_scanner_html, height=320, scrolling=False)
 
-# --- LÓGICA DE VALIDAÇÃO AUTOMÁTICA ---
-if imagem_camera is not None:
-    # Usamos a biblioteca Pillow (PIL) para processar os bytes da imagem tirada pela câmara
-    from PIL import Image
-    import qrcode
-    # Para decodificar o QR code em Python, usamos uma biblioteca leve chamada pyzbar ou opencv.
-    # Como queremos garantir zero falhas e o Streamlit roda no servidor, uma alternativa ultra estável
-    # e moderna para formulários de check-in rápido é também permitir a introdução manual ou usar decodificação direta.
+# 2. Processamento do Código detetado pelo JavaScript
+if codigo_detetado:
+    str.warning(f"🔍 Código detetado: {codigo_detetado}")
     
-    # Para simplificar e garantir eficácia absoluta sem depender de drivers pesados de câmara no servidor:
-    # Vamos usar o 'pyzbar' se estiver instalado, ou um campo de texto inteligente interligado para leitores integrados.
+    # Faz a pesquisa no Supabase
     try:
-        from pyzbar.pyzbar import decode
-        img = Image.open(imagem_camera)
-        codigos_detetados = decode(img)
+        # Assume que o teu QR code contém o ID do convidado
+        resposta = supabase.table("convidados").select("*").eq("id", codigo_detetado).execute()
         
-        if codigos_detetados:
-            # Extrai o UUID guardado dentro do QR Code
-            uuid_convidado = codigos_detetados[0].data.decode('utf-8').strip()
+        if resposta.data:
+            convidado = resposta.data[0]
+            nome = convidado.get("nome")
+            ja_entrou = convidado.get("chegou", False)
             
-            with nn.spinner("A validar credenciais no Supabase..."):
-                status, nome_convidado = realizar_checkin(uuid_convidado)
-                
-                if status == "sucesso":
-                    nn.markdown(f"""
-                    <div class="card-sucesso">
-                        ✅ <b>ENTRADA AUTORIZADA!</b><br>
-                        <span style="font-size: 24px; display:block; margin-top:10px;">👋 Bem-vindo, {nome_convidado}!</span>
-                        <p style="font-size: 12px; margin: 8px 0 0 0; opacity: 0.8;">Presença registada de forma automática na base de dados.</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                elif status == "ja_entrou":
-                    nn.markdown(f"""
-                    <div class="card-erro">
-                        ⚠️ <b>ACESSO REUSADO / FRAUDE!</b><br>
-                        <span style="font-size: 20px; display:block; margin-top:10px;">O convidado <b>{nome_convidado}</b> já entrou no evento!</span>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                elif status == "nao_encontrado":
-                    nn.markdown("""
-                    <div class="card-erro">
-                        ❌ <b>CONVITE INVÁLIDO!</b><br>
-                        Código QR não encontrado na lista oficial do Supabase.
-                    </div>
-                    """, unsafe_allow_html=True)
+            if ja_entrou:
+                str.error(f"❌ ATENÇÃO: {nome} já entrou no evento!")
+                str.audio("https://www.soundjay.com/buttons/sounds/button-10.mp3") # Som de erro
+            else:
+                # Atualiza o estado de presença no Supabase
+                supabase.table("convidados").update({"chegou": True}).eq("id", codigo_detetado).execute()
+                str.success(f"✅ BEM-VINDO, {nome}! Entrada confirmada com sucesso! 🎉")
+                str.balloons()
+                str.audio("https://www.soundjay.com/buttons/sounds/button-09.mp3") # Som de sucesso
         else:
-            nn.warning("⚠️ Não foi possível ler um QR Code nítido. Certifica-te de que o código está bem focado e centralizado.")
+            str.error("❌ Código inválido ou não encontrado no Supabase.")
             
-    except ImportError:
-        # Fallback engenhoso: Caso não queiras instalar o pyzbar (que requer bibliotecas C do sistema),
-        # podes simplesmente usar a app de câmara nativa do telemóvel (iOS/Android) que já lê QR codes e abre links, 
-        # ou usar este campo de texto rápido abaixo onde o leitor do telemóvel cola o código instantaneamente.
-        nn.info("💡 Modo de validação manual/híbrido ativo.")
-        uuid_manual = nn.text_input("Introduzir ou colar ID do QR Code:", placeholder="Insere o código recebido no email...")
-        
-        if nn.button("Validar Entrada Manunamente", use_container_width=True):
-            if uuid_manual.strip():
-                status, nome_convidado = realizar_checkin(uuid_manual.strip())
-                if status == "sucesso":
-                    nn.markdown(f'<div class="card-sucesso">✅ <b>Bem-vindo, {nome_convidado}!</b> Entrada registada.</div>', unsafe_allow_html=True)
-                elif status == "ja_entrou":
-                    nn.markdown(f'<div class="card-erro">⚠️ <b>Atenção!</b> {nome_convidado} já fez check-in antes.</div>', unsafe_allow_html=True)
-                else:
-                    nn.markdown('<div class="card-erro">❌ Código não encontrado no Supabase.</div>', unsafe_allow_html=True)
+    except Exception as e:
+        str.error(f"Erro ao ligar ao Supabase: {e}")
+
+# Botão de segurança para digitação manual se necessário
+with str.expander("⌨️ Validação Manual Alternativa"):
+    id_manual = str.text_input("Insere o ID ou código único:")
+    if str.button("Validar Manualmente"):
+        if id_manual:
+            # Corre a mesma lógica de validação do Supabase
+            resposta = supabase.table("convidados").select("*").eq("id", id_manual).execute()
+            if resposta.data:
+                str.success(f"✅ Confirmado Manualmente: {resposta.data[0]['nome']}")
+                str.balloons()
