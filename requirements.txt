@@ -1,0 +1,6 @@
+streamlit
+supabase
+qrcode[pil]
+pillow
+python-dotenv
+requests
