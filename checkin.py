@@ -13,36 +13,33 @@ st.markdown("""
     <p class="subtitle">Scanner de QR Code em Tempo Real</p>
 """, unsafe_allow_html=True)
 
-# Cria uma chave única na memória para podermos resetar o scanner se quisermos
 if "scanner_key" not in st.session_state:
     st.session_state.scanner_key = 0
 
-# Ativa o scanner de vídeo em tempo real nativo
-# Ele captura o texto assim que o QR Code entra no enquadramento
+# Ativa o scanner de vídeo em tempo real
 codigo_limpo = qrcode_scanner(key=f"qr_scanner_{st.session_state.scanner_key}")
 
-# Se o scanner ler alguma coisa, processa imediatamente
 if codigo_limpo:
     st.info(f"🔍 Código detetado: {codigo_limpo}")
     
     try:
-        # Faz a pesquisa direta na base de dados
+        # Faz a pesquisa direta na tabela convidados
         resposta = supabase.table("convidados").select("*").eq("id", codigo_limpo).execute()
         
         if resposta.data:
             convidado = resposta.data[0]
             nome = convidado.get("nome")
-            ja_entrou = convidado.get("chegou", False)
+            # AJUSTE: Mudado de 'chegou' para 'compareceu' conforme a tua base de dados
+            ja_entrou = convidado.get("compareceu", False)
             
             if ja_entrou:
                 st.error(f"❌ ATENÇÃO: {nome} já entrou no evento!")
             else:
-                # Faz o update de presença no Supabase
-                supabase.table("convidados").update({"chegou": True}).eq("id", codigo_limpo).execute()
+                # AJUSTE: Faz o update na coluna correta 'compareceu'
+                supabase.table("convidados").update({"compareceu": True}).eq("id", codigo_limpo).execute()
                 st.success(f"✅ BEM-VINDO, {nome}! Entrada confirmada com sucesso! 🎉")
                 st.balloons()
                 
-                # Cria um botão para fazer scan ao próximo convidado
                 if st.button("Fazer Scan ao Próximo"):
                     st.session_state.scanner_key += 1
                     st.rerun()
@@ -61,6 +58,7 @@ with st.expander("⌨️ Validação Manual Alternativa"):
         if id_manual:
             resposta = supabase.table("convidados").select("*").eq("id", id_manual).execute()
             if resposta.data:
-                supabase.table("convidados").update({"chegou": True}).eq("id", id_manual).execute()
+                # AJUSTE: Faz o update manual na coluna 'compareceu'
+                supabase.table("convidados").update({"compareceu": True}).eq("id", id_manual).execute()
                 st.success(f"✅ Confirmado Manualmente: {resposta.data[0]['nome']}!")
                 st.balloons()
